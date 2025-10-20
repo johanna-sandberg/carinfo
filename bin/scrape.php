@@ -1,33 +1,122 @@
 <?php
 
-require __DIR__ . '/../src/Db.php';
-require __DIR__ . '/../src/Http.php';
-require __DIR__ . '/../src/Importer.php';
-require __DIR__ . '/../src/Parser.php';
+declare(strict_types=1);
 
-function getUrlsFromSitemapIndex(int $pageStart, int $count, int $target=600): array {
-  $urls = [];
-  for ($i = $pageStart; $i < $pageStart + $count; $i++) {
-    $sitemapIndexUrl = "https://bilweb.se/sitemap/vehicles/$i.xml";
-    $xml = curl_get($sitemapIndexUrl);
-    preg_match_all('~https://bilweb\.se/[^\s<]+~', $xml, $m);
-    foreach ($m[0] as $u) $urls[] = $u;
-    $urls = array_values(array_unique($urls));
-    if (count($urls) >= $target) break;
-    usleep(random_int(250, 500) * 1000);
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
+require __DIR__ . '/../src/bootstrap.php';
+
+use CarInfo\Http\CurlClient;
+use CarInfo\Import\CarImporter;
+use CarInfo\Parsing\CarParser;
+
+final class ScrapeRunner
+{
+  private CurlClient $http;
+  private CarParser $parser;
+  private CarImporter $importer;
+
+  public function __construct()
+  {
+    $this->http = new CurlClient();
+    $this->parser = new CarParser();
+    $this->importer = new CarImporter();
   }
-  return $urls;
+
+  public function run(array $argv): void
+  {
+    $opts = $this->parseCliOptions($argv);
+
+    $detailUrls = $this->fetchDetailUrlsFromSearchPage($opts['searchLimit']);
+    fwrite(STDERR, "Collected from search: " . count($detailUrls) . "\n");
+
+    $this->importer->begin();
+
+    $saved = 0;
+    $batchSize = 100;
+
+    foreach ($detailUrls as $detailUrl) {
+      fwrite(STDERR, "Fetch: $detailUrl\n");
+      try {
+        $html = $this->http->fetchHtml($detailUrl, 25, 2);
+        $car = $this->parser->parseDetailPageHtml($html);
+        if (!$car) {
+          fwrite(STDERR, "Skip: no data\n");
+          continue;
+        }
+
+        $car['source_url'] = $detailUrl;
+        if (isset($car['reg_plate'])) {
+          $car['reg_plate'] = strtoupper(trim($car['reg_plate']));
+        }
+
+        $this->importer->upsertCar($car);
+
+        $saved++;
+        if ($saved % $batchSize === 0) {
+          $this->importer->commit();
+          $this->importer->begin();
+          fwrite(STDERR, "Saved: $saved\n");
+        }
+
+        usleep(random_int($opts['sleepMinMs'], $opts['sleepMaxMs']) * 1000);
+      } catch (\Throwable $e) {
+        fwrite(STDERR, "Item error: " . $e->getMessage() . "\n");
+      }
+    }
+
+    $this->importer->commit();
+    fwrite(STDERR, "Done. Total saved: $saved\n");
+  }
+
+  private function parseCliOptions(array $argv): array
+  {
+    $options = ['searchLimit' => 500, 'sleepMinMs' => 300, 'sleepMaxMs' => 700];
+    foreach ($argv as $arg) {
+      if (preg_match('~^--searchLimit=(\d+)$~', $arg, $m)) {
+        $options['searchLimit'] = (int)$m[1];
+      }
+    }
+    return $options;
+  }
+
+  private function looksLikeDetailUrl(string $url): bool
+  {
+    return (bool)preg_match('~^https?://bilweb\.se/.+-(\d+)$~i', $url);
+  }
+
+  private function fetchDetailUrlsFromSearchPage(int $limit): array
+  {
+    $limit = max(1, min(1000, $limit));
+    $searchUrl = "https://bilweb.se/sok?query=&type=1&limit=" . $limit;
+    fwrite(STDERR, "Search page: $searchUrl\n");
+
+    $html = $this->http->fetchHtml($searchUrl, 20, 2);
+
+    $dom = new \DOMDocument();
+    @$dom->loadHTML($html);
+    $xp = new \DOMXPath($dom);
+
+    $urls = [];
+    foreach ($xp->query("//a[contains(concat(' ', normalize-space(@class), ' '), ' go_to_detail ')]") as $a) {
+      if (!($a instanceof \DOMElement)) {
+        continue;
+      }
+      $href = $a->getAttribute('href') ?? '';
+      if ($href === '') {
+        continue;
+      }
+      if (!str_starts_with($href, 'http')) {
+        $href = 'https://bilweb.se' . $href;
+      }
+      if ($this->looksLikeDetailUrl($href)) {
+        $urls[] = $href;
+      }
+    }
+
+    return array_values(array_unique($urls));
+  }
 }
 
-$urls = getUrlsFromSitemapIndex(1, 50, 800);
-$count = 0;
-foreach ($urls as $url) {
-  $html = curl_get($url);
-  $car = parseListingCardHtml($html);
-  if (!$car) continue;
-  $car['source_url'] = $url;
-  saveCarData($car);
-  $count++;
-  if ($count % 50 === 0) fwrite(STDERR, "Saved: $count\n");
-  usleep(random_int(250,500)*1000);
-}
+(new ScrapeRunner())->run($argv ?? []);
