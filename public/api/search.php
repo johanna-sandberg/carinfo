@@ -1,15 +1,14 @@
 <?php
+
+declare(strict_types=1);
+
 header('Content-Type: application/json; charset=utf-8');
 
-$params = [
-  'brand' => trim($_GET['brand'] ?? ''),
-  'model_year' => trim($_GET['model_year'] ?? ''),
-  'reg' => trim($_GET['reg'] ?? ''),
-  'limit' => (int)($_GET['limit'] ?? 25),
-  'offset' => (int)($_GET['offset'] ?? 0),
-];
+require __DIR__ . '/../../src/bootstrap.php';
 
-echo json_encode([
-  'received' => $params,
-  'timestamp' => date('c'),
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+use CarInfo\Http\SearchController;
+
+$controller = new SearchController();
+$response = $controller->handle($_GET);
+
+echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
