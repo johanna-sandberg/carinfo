@@ -18,6 +18,7 @@ final class CarImporter
     if (!$this->inTx) {
       Db::pdo()->beginTransaction();
       $this->inTx = true;
+      $this->pending = 0;
     }
   }
 
@@ -34,35 +35,39 @@ final class CarImporter
   {
     if ($this->stmt === null) {
       $sql = "INSERT INTO cars (
-                      source_url, listed_at, manufactured_month,
-                      brand, model, model_year, color, reg_plate, price_sek, mileage_km,
-                      horsepower, fuel, gearbox, body, location, dealer_name,
-                      title, description
-                    )
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE
-                      listed_at=COALESCE(VALUES(listed_at), listed_at),
-                      manufactured_month=COALESCE(VALUES(manufactured_month), manufactured_month),
-                      brand=COALESCE(VALUES(brand), brand),
-                      model=COALESCE(VALUES(model), model),
-                      model_year=COALESCE(VALUES(model_year), model_year),
-                      color=COALESCE(VALUES(color), color),
-                      reg_plate=COALESCE(VALUES(reg_plate), reg_plate),
-                      price_sek=COALESCE(VALUES(price_sek), price_sek),
-                      mileage_km=COALESCE(VALUES(mileage_km), mileage_km),
-                      horsepower=COALESCE(VALUES(horsepower), horsepower),
-                      fuel=COALESCE(VALUES(fuel), fuel),
-                      gearbox=COALESCE(VALUES(gearbox), gearbox),
-                      body=COALESCE(VALUES(body), body),
-                      location=COALESCE(VALUES(location), location),
-                      dealer_name=COALESCE(VALUES(dealer_name), dealer_name),
-                      title=COALESCE(VALUES(title), title),
-                      description=COALESCE(VALUES(description), description)";
+                external_id, source_url,
+                listed_at, manufactured_month,
+                brand, model, model_year, color, reg_plate, price_sek, mileage_km,
+                horsepower, fuel, gearbox, body, location, dealer_name,
+                title, description
+              )
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              ON DUPLICATE KEY UPDATE
+                source_url=COALESCE(VALUES(source_url), source_url),
+                listed_at=COALESCE(VALUES(listed_at), listed_at),
+                manufactured_month=COALESCE(VALUES(manufactured_month), manufactured_month),
+                brand=COALESCE(VALUES(brand), brand),
+                model=COALESCE(VALUES(model), model),
+                model_year=COALESCE(VALUES(model_year), model_year),
+                color=COALESCE(VALUES(color), color),
+                reg_plate=COALESCE(VALUES(reg_plate), reg_plate),
+                price_sek=COALESCE(VALUES(price_sek), price_sek),
+                mileage_km=COALESCE(VALUES(mileage_km), mileage_km),
+                horsepower=COALESCE(VALUES(horsepower), horsepower),
+                fuel=COALESCE(VALUES(fuel), fuel),
+                gearbox=COALESCE(VALUES(gearbox), gearbox),
+                body=COALESCE(VALUES(body), body),
+                location=COALESCE(VALUES(location), location),
+                dealer_name=COALESCE(VALUES(dealer_name), dealer_name),
+                title=COALESCE(VALUES(title), title),
+                description=COALESCE(VALUES(description), description)";
       $this->stmt = Db::pdo()->prepare($sql);
     }
 
     $this->stmt->execute([
+      $car['external_id'],
       $car['source_url'],
+
       $car['listed_at'] ?? null,
       $car['manufactured_month'] ?? null,
 

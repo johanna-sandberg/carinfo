@@ -28,15 +28,15 @@ final class ScrapeRunner
   {
     $opts = $this->parseCliOptions($argv);
 
-    $detailUrls = $this->fetchDetailUrlsFromSearchPage($opts['searchLimit']);
-    fwrite(STDERR, "Collected from search: " . count($detailUrls) . "\n");
+    $cards = $this->fetchCardsFromSearch($opts['searchLimit']);
+    fwrite(STDERR, "Collected from search: " . count($cards) . "\n");
 
     $this->importer->begin();
 
     $saved = 0;
-    $batchSize = 100;
+    $batchSize = $opts['batch'];
 
-    foreach ($detailUrls as $detailUrl) {
+    foreach ($cards as $externalId => $detailUrl) {
       fwrite(STDERR, "Fetch: $detailUrl\n");
       try {
         $html = $this->http->fetchHtml($detailUrl, 25, 2);
@@ -46,10 +46,9 @@ final class ScrapeRunner
           continue;
         }
 
+        $car['external_id'] = (string)$externalId;
         $car['source_url'] = $detailUrl;
-        if (isset($car['reg_plate'])) {
-          $car['reg_plate'] = strtoupper(trim($car['reg_plate']));
-        }
+        if (isset($car['reg_plate'])) $car['reg_plate'] = strtoupper(trim($car['reg_plate']));
 
         $this->importer->upsertCar($car);
 
@@ -57,7 +56,7 @@ final class ScrapeRunner
         if ($saved % $batchSize === 0) {
           $this->importer->commit();
           $this->importer->begin();
-          fwrite(STDERR, "Saved: $saved\n");
+          fwrite(STDERR, "Committed batch, total saved: $saved\n");
         }
 
         usleep(random_int($opts['sleepMinMs'], $opts['sleepMaxMs']) * 1000);
@@ -72,50 +71,54 @@ final class ScrapeRunner
 
   private function parseCliOptions(array $argv): array
   {
-    $options = ['searchLimit' => 500, 'sleepMinMs' => 300, 'sleepMaxMs' => 700];
+    $options = ['searchLimit' => 800, 'batch' => 50, 'sleepMinMs' => 300, 'sleepMaxMs' => 700];
     foreach ($argv as $arg) {
-      if (preg_match('~^--searchLimit=(\d+)$~', $arg, $m)) {
-        $options['searchLimit'] = (int)$m[1];
-      }
+      if (preg_match('~^--searchLimit=(\d+)$~', $arg, $m)) $options['searchLimit'] = (int)$m[1];
+      elseif (preg_match('~^--batch=(\d+)$~', $arg, $m)) $options['batch'] = max(1, (int)$m[1]);
     }
     return $options;
   }
 
-  private function looksLikeDetailUrl(string $url): bool
-  {
-    return (bool)preg_match('~^https?://bilweb\.se/.+-(\d+)$~i', $url);
-  }
-
-  private function fetchDetailUrlsFromSearchPage(int $limit): array
+  private function fetchCardsFromSearch(int $limit): array
   {
     $limit = max(1, min(1000, $limit));
-    $searchUrl = "https://bilweb.se/sok?query=&type=1&limit=" . $limit;
-    fwrite(STDERR, "Search page: $searchUrl\n");
+    $url = "https://bilweb.se/sok?query=&type=1&limit=" . $limit;
+    fwrite(STDERR, "Search page: $url\n");
 
-    $html = $this->http->fetchHtml($searchUrl, 20, 2);
+    $html = $this->http->fetchHtml($url, 20, 2);
 
     $dom = new \DOMDocument();
     @$dom->loadHTML($html);
     $xp = new \DOMXPath($dom);
 
-    $urls = [];
-    foreach ($xp->query("//a[contains(concat(' ', normalize-space(@class), ' '), ' go_to_detail ')]") as $a) {
-      if (!($a instanceof \DOMElement)) {
-        continue;
-      }
-      $href = $a->getAttribute('href') ?? '';
-      if ($href === '') {
-        continue;
-      }
-      if (!str_starts_with($href, 'http')) {
-        $href = 'https://bilweb.se' . $href;
-      }
-      if ($this->looksLikeDetailUrl($href)) {
-        $urls[] = $href;
+    $map = [];
+
+    foreach ($xp->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' Card ')][@id]") as $card) {
+      if (!($card instanceof \DOMElement)) continue;
+      $idAttr = trim($card->getAttribute('id') ?? '');
+      if ($idAttr === '' || !ctype_digit($idAttr)) continue;
+
+      $a = $xp->query(".//a[contains(concat(' ', normalize-space(@class), ' '), ' go_to_detail ')]", $card)->item(0);
+      if (!($a instanceof \DOMElement)) continue;
+
+      $href = trim($a->getAttribute('href') ?? '');
+      if ($href === '') continue;
+      if (!str_starts_with($href, 'http')) $href = 'https://bilweb.se' . $href;
+
+      $map[(int)$idAttr] = $href;
+    }
+
+    if (!$map) {
+      foreach ($xp->query("//a[contains(concat(' ', normalize-space(@class), ' '), ' go_to_detail ')]") as $a) {
+        if (!($a instanceof \DOMElement)) continue;
+        $href = trim($a->getAttribute('href') ?? '');
+        if ($href === '') continue;
+        if (!str_starts_with($href, 'http')) $href = 'https://bilweb.se' . $href;
+        if (preg_match('~-(\d+)$~', $href, $m)) $map[(int)$m[1]] = $href;
       }
     }
 
-    return array_values(array_unique($urls));
+    return $map;
   }
 }
 
