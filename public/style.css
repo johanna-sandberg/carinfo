@@ -1,91 +1,16 @@
-html, body {
-  background-color: #121212;
-  color: #e4e4e4;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-}
-
-h1 {
-  color: #f0f0f0;
-  letter-spacing: 0.5px;
-}
-
-.form-control {
-  background-color: #1e1e1e;
-  border: 1px solid #333;
-  color: #e0e0e0;
-}
-
-.form-control:focus {
-  background-color: #1e1e1e;
-  border-color: #007bff;
-  color: #fff;
-  box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
-}
-
-input::placeholder {
-  color: #aaa !important;
-}
-
-.btn-primary {
-  background-color: #007bff;
-  border-color: #007bff;
-}
-
-.btn-primary:hover {
-  background-color: #0a84ff;
-  border-color: #0a84ff;
-}
-
-.btn-outline-light {
-  border-color: #555;
-  color: #ddd;
-}
-
-.btn-outline-light:hover {
-  background-color: #333;
-  color: #fff;
-}
-
 .card {
-  background-color: #1c1c1c;
-  border: 1px solid #2a2a2a;
-  transition: transform 0.1s ease-in-out, border-color 0.1s ease-in-out;
+  transition: border-color .08s ease-in-out, transform .08s ease-in-out;
 }
 
 .card:hover {
-  border-color: #007bff;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
+  border-color: var(--bs-primary);
 }
 
 .card-title {
-  color: #fff;
   font-size: 1.1rem;
 }
 
-.card-text {
-  color: #ccc;
-  font-size: 0.9rem;
-}
-
-.badge.text-bg-secondary {
-  background-color: #333;
-  color: #ddd;
-}
-
-a {
-  color: #58a6ff;
-  text-decoration: none;
-}
-
-a:hover {
-  color: #79b8ff;
-  text-decoration: underline;
-}
-
 #pager button {
-  border-radius: 0.4rem;
-}
-
-#meta {
-  color: #888;
+  border-radius: .4rem;
 }
